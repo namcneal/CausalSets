@@ -270,7 +270,7 @@ end
 ##
 tmin = 0.
 tmax = 10.
-num_events = 500
+num_events = 1500
 num_trials = 50
 minkowski_data = Matrix{Float64}[]
 for j in 1:num_trials
@@ -281,7 +281,7 @@ end
 ##
 tmin = -10.
 tmax = -1e-2
-num_events = 500
+num_events = 1500
 num_trials = 50
 desitter_data = Matrix{Float64}[]
 for j in 1:num_trials
@@ -292,7 +292,7 @@ end
 ##
 tmin = -10.
 tmax = -1e-2
-num_events = 500
+num_events = 1500
 num_trials = 50
 antidesitter_data = Matrix{Float64}[]
 
@@ -312,10 +312,48 @@ plotting_data_minkowski = reduce(vcat, minkowski_data)
 plotting_data_desitter  = reduce(vcat, desitter_data)
 plotting_data_antidesitter  = reduce(vcat, antidesitter_data)
 
-scatter(plotting_data_minkowski[:,1], plotting_data_minkowski[:,2], color=:blue)
-scatter!(plotting_data_desitter[:,1],  plotting_data_desitter[:,2],  color=:green)
-scatter!(plotting_data_antidesitter[:,1],  plotting_data_antidesitter[:,2],  color=:red)
+scatter( plotting_data_minkowski[:,1],     plotting_data_minkowski[:,2],    color=:blue)
+scatter!(plotting_data_desitter[:,1],      plotting_data_desitter[:,2],     color=:green)
+scatter!(plotting_data_antidesitter[:,1],  plotting_data_antidesitter[:,2], color=:red)
 
 current_figure()
 
 ## 
+
+description = """
+These three data sets were computed to determine how the volume of a 2D geodesic ball 
+varies with its radius in causal sets derived from Minkowski, de Sitter, and anti-de Sitter
+spaces. In the continuum, the scalar curvature is related to the rate of change of this
+volume with respect to the radius. Using causal sets spinkled into these three spaces
+according to the procedure outlined in Dhital's undergraduate honors thesis, I found that 
+the curvature of these spaces can be seen in the volumetric growth of the geodesic ball
+within the causal diamonds that I use for the finite spacetime region. This gives a promising 
+result.
+
+Each dataset contains the volume data for 50 causal sets with 1500 events. The Minkowski time
+bounds are [0,10] and the de Sitter are [-10, -1e-2]. The anti-de Sitter space was created
+by rotating the de Sitter spacetime and placing a root event at the appropriate corner of the 
+causal diamond. The statistics for the three spacetimes were
+
+Creation of the causal set
+==========================
+* Minkowski      : 1-2 s
+* de Sitter      : 1-1.5 s
+* anti-de Sitter : 1-1.5 s
+
+Reduction of decomposable morphisms
+==========================
+* Minkowski      : 15-20 s
+* de Sitter      : 35-40 s
+* anti-de Sitter : 5-5.5 s
+
+Total time to compute the volumetric growth rate
+==========================
+* Minkowski      : 300-400 s
+* de Sitter      : 500-550 s
+* anti-de Sitter : 0.003-0.006 s -> This function being timed takes the pre-computed geodesic distances, 
+                                    so its much faster. I should have timed the function that computed 
+                                    these distances
+"""
+
+@save  "geodesic_ball_volume_growth_three_spacetimes_1500_events_13_jan_2022.bson" description minkowski_data desitter_data antidesitter_data

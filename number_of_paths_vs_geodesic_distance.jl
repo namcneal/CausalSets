@@ -4,7 +4,13 @@ using CairoMakie
 using GraphPlot
 using LinearAlgebra
 using Random
+using GaussianProcesses
+using StatsBase
 using BSON: @save, @load
+import Plots
+
+using DataStructures
+include("utils/GraphAlgs.jl")
 
 Real = Union{Float64, Int64}
 ##
@@ -223,99 +229,19 @@ end
 
 ##
 
-tmin = -10.
-tmax = -1e-2
-num_events = 200
-sprinkling = make_sprinkling(tmin, tmax, num_events, desitter_event)
-sprinkling = sprinkling[[2,1], :]
-sprinkling[:, 1] = [-5; -5]
-causet = make_irreducible_causet(sprinkling)
-geodesic_distances = [find_longest_path(causet, 1, i; log_level=0).upper_bound 
-                      for i in 1:num_events]; 
-##
-colors = repeat([:black], num_events)
-colors[geodesic_distances .<= 4] .= :blue 
-
-hasse_diagram(causet, sprinkling, colors)
-current_figure()
-##
-
-function compute_volume_growth(geodesic_distances::Vector{Core.Real})
-    volumes = Int64[]
-    distances = collect(1:maximum(geodesic_distances))
-    for d in distances
-        push!(volumes, sum(geodesic_distances .<= d))
-    end
-
-    return reduce(hcat, [distances, volumes])
-end
-
-function compute_volume_growth(irreducible_causet::SimpleDiGraph; root::Int64=1)
-    
-    num_events = nv(irreducible_causet)
-    geodesic_distances = [find_longest_path(irreducible_causet, root, i; log_level=0).upper_bound 
-                          for i in 1:num_events]; 
-
-    return compute_volume_growth(geodesic_distances)
-end
-
-function compute_volume_growth(tmin::Float64, tmax::Float64, num_events::Int64,
-    sprinkler::Function, root::Vector{Float64})
-
-    causet =  make_irreducible_causet(tmin, tmax, num_events, sprinkler, root)
-
-    return compute_volume_growth(causet)
-end
-
-##
 tmin = 0.
 tmax = 10.
-num_events = 500
-num_trials = 50
-minkowski_data = Matrix{Float64}[]
-for j in 1:num_trials
-    @time data = compute_volume_growth(tmin, tmax, num_events, minkowski_event, [0.; 0])
-    push!(minkowski_data, data)
-end
+num_events = 250
+sprinkling = make_sprinkling(tmin, tmax, num_events, minkowski_event)
+# sprinkling = sprinkling[[2,1], :]
+sprinkling[:, 1] = [0; 0]
+causet = make_irreducible_causet(sprinkling)
 
-##
-tmin = -10.
-tmax = -1e-2
-num_events = 500
-num_trials = 50
-desitter_data = Matrix{Float64}[]
-for j in 1:num_trials
-    @time data = compute_volume_growth(tmin, tmax, num_events, desitter_event, [0.; -10])
-    push!(desitter_data, data)
-end
-
-##
-tmin = -10.
-tmax = -1e-2
-num_events = 500
-num_trials = 50
-antidesitter_data = Matrix{Float64}[]
-
-for j in 1:num_trials
-    sprinkling = make_sprinkling(tmin, tmax, num_events, desitter_event)
-    sprinkling = sprinkling[[2,1], :]
-    sprinkling[:, 1] = [tmin, tmin]
-    causet = make_irreducible_causet(sprinkling)
-    geodesic_distances = [find_longest_path(causet, 1, i; log_level=0).upper_bound 
+@time geodesic_distances = [find_longest_path(causet, 1, i; log_level=0).upper_bound 
                       for i in 1:num_events]; 
-
-    @time data = compute_volume_growth(geodesic_distances)
-    push!(antidesitter_data, data)
-end
 ##
-plotting_data_minkowski = reduce(vcat, minkowski_data)
-plotting_data_desitter  = reduce(vcat, desitter_data)
-plotting_data_antidesitter  = reduce(vcat, antidesitter_data)
 
-scatter(plotting_data_minkowski[:,1], plotting_data_minkowski[:,2], color=:blue)
-scatter!(plotting_data_desitter[:,1],  plotting_data_desitter[:,2],  color=:green)
-scatter!(plotting_data_antidesitter[:,1],  plotting_data_antidesitter[:,2],  color=:red)
+@time num_paths = [total_num_paths(causet, 1, i) for i in 1:num_events];
 
-current_figure()
-
-## 
+##
+plot(geodesic_distances,log10.(num_paths))

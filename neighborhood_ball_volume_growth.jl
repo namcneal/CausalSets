@@ -4,7 +4,10 @@ using CairoMakie
 using GraphPlot
 using LinearAlgebra
 using Random
+using GaussianProcesses
+using StatsBase
 using BSON: @save, @load
+import Plots
 
 Real = Union{Float64, Int64}
 ##
@@ -223,40 +226,41 @@ end
 
 ##
 
-tmin = -10.
-tmax = -1e-2
+tmin = 0.
+tmax = 10.
 num_events = 200
-sprinkling = make_sprinkling(tmin, tmax, num_events, desitter_event)
-sprinkling = sprinkling[[2,1], :]
-sprinkling[:, 1] = [-5; -5]
+sprinkling = make_sprinkling(tmin, tmax, num_events, minkowski_event)
+# sprinkling = sprinkling[[2,1], :]
+sprinkling[:, 1] = [0; 0]
 causet = make_irreducible_causet(sprinkling)
-geodesic_distances = [find_longest_path(causet, 1, i; log_level=0).upper_bound 
-                      for i in 1:num_events]; 
+
+# geodesic_distances = [find_longest_path(causet, 1, i; log_level=0).upper_bound 
+#                       for i in 1:num_events]; 
 ##
 colors = repeat([:black], num_events)
-colors[geodesic_distances .<= 4] .= :blue 
+colors[neighborhood(causet, 1, 4)] .= :blue 
 
 hasse_diagram(causet, sprinkling, colors)
 current_figure()
 ##
 
-function compute_volume_growth(geodesic_distances::Vector{Core.Real})
-    volumes = Int64[]
-    distances = collect(1:maximum(geodesic_distances))
-    for d in distances
-        push!(volumes, sum(geodesic_distances .<= d))
-    end
-
-    return reduce(hcat, [distances, volumes])
-end
 
 function compute_volume_growth(irreducible_causet::SimpleDiGraph; root::Int64=1)
     
     num_events = nv(irreducible_causet)
-    geodesic_distances = [find_longest_path(irreducible_causet, root, i; log_level=0).upper_bound 
-                          for i in 1:num_events]; 
+    d = 1
+    volume = 0
+    volumes   = Int64[]
+    distances = Int64[]
+    while volume < num_events
+        volume = length(neighborhood(irreducible_causet, root, d))
+        push!(volumes, volume)
+        push!(distances, d)
 
-    return compute_volume_growth(geodesic_distances)
+        d += 1
+    end
+
+    return reduce(hcat, [distances, volumes])
 end
 
 function compute_volume_growth(tmin::Float64, tmax::Float64, num_events::Int64,
@@ -270,7 +274,7 @@ end
 ##
 tmin = 0.
 tmax = 10.
-num_events = 500
+num_events = 1500
 num_trials = 50
 minkowski_data = Matrix{Float64}[]
 for j in 1:num_trials
@@ -281,7 +285,7 @@ end
 ##
 tmin = -10.
 tmax = -1e-2
-num_events = 500
+num_events = 1500
 num_trials = 50
 desitter_data = Matrix{Float64}[]
 for j in 1:num_trials
@@ -292,7 +296,7 @@ end
 ##
 tmin = -10.
 tmax = -1e-2
-num_events = 500
+num_events = 1500
 num_trials = 50
 antidesitter_data = Matrix{Float64}[]
 
@@ -301,10 +305,8 @@ for j in 1:num_trials
     sprinkling = sprinkling[[2,1], :]
     sprinkling[:, 1] = [tmin, tmin]
     causet = make_irreducible_causet(sprinkling)
-    geodesic_distances = [find_longest_path(causet, 1, i; log_level=0).upper_bound 
-                      for i in 1:num_events]; 
 
-    @time data = compute_volume_growth(geodesic_distances)
+    @time data = compute_volume_growth(causet)
     push!(antidesitter_data, data)
 end
 ##
@@ -312,10 +314,67 @@ plotting_data_minkowski = reduce(vcat, minkowski_data)
 plotting_data_desitter  = reduce(vcat, desitter_data)
 plotting_data_antidesitter  = reduce(vcat, antidesitter_data)
 
-scatter(plotting_data_minkowski[:,1], plotting_data_minkowski[:,2], color=:blue)
-scatter!(plotting_data_desitter[:,1],  plotting_data_desitter[:,2],  color=:green)
-scatter!(plotting_data_antidesitter[:,1],  plotting_data_antidesitter[:,2],  color=:red)
+scatter(plotting_data_antidesitter[:,1],  plotting_data_antidesitter[:,2], color=:red, markersize=15)
+scatter!(plotting_data_desitter[:,1],      plotting_data_desitter[:,2],     color=:green, markersize=15)
+scatter!( plotting_data_minkowski[:,1],     plotting_data_minkowski[:,2],    color=:blue)
 
 current_figure()
 
+##
+
+a = plotting_data_minkowski[plotting_data_minkowski[:,1] .== 6, 2]
+f = ecdf(a)
+x = collect(minimum(a):maximum(a))
+v = f(x)
+plot(x, v)
 ## 
+# mZero = MeanZero() 
+# kern  = SE(0.0,0.0)
+
+# x = plotting_data_minkowski[:,1]
+# y = plotting_data_minkowski[:,2]
+# logObsNoise = 1.0
+# gp_minkowski = GP(x,y,mZero,kern, logObsNoise)   
+# optimize!(gp_minkowski) 
+
+# ##
+
+# x = plotting_data_desitter[:,1]
+# y = plotting_data_desitter[:,2]
+# logObsNoise = 1.0
+# gp_desitter = GP(x,y,mZero,kern, logObsNoise)   
+# optimize!(gp_desitter)   
+
+# ##
+# x = plotting_data_antidesitter[:,1]
+# y = plotting_data_antidesitter[:,2]
+# logObsNoise = 1.0
+# gp_antidesitter = GP(x,y,mZero,kern)    
+# optimize!(gp_antidesitter)       
+
+# ##
+# Plots.plot(gp_minkowski ;fmt=:png, color=:blue)      # Plot the GP
+# Plots.plot!(gp_desitter ; xlabel="x", ylabel="y", legend=false, fmt=:png, color=:green)      # Plot the GP
+# Plots.plot!(gp_antidesitter ; xlabel="x", ylabel="y", legend=false, fmt=:png, color=:red)      # Plot the GP
+
+# ## 
+ description = """
+These three data sets were computed to determine how the volume of a 2D geodesic ball 
+varies with its radius in causal sets derived from Minkowski, de Sitter, and anti-de Sitter
+spaces. In the continuum, the scalar curvature is related to the rate of change of this
+volume with respect to the radius. Using causal sets spinkled into these three spaces
+according to the procedure outlined in Dhital's undergraduate honors thesis, I found that 
+the curvature of these spaces can be seen in the volumetric growth of the geodesic ball
+within the causal diamonds that I use for the finite spacetime region. This gives a promising 
+result.
+
+I wanted to test this for a different definition of a ball that did not use the geodesic distance
+but the neighborhood distance where you just look at the number of events within d morphims from the root.
+
+Each dataset contains the volume data for 50 causal sets with 1500 events. The Minkowski time
+bounds are [0,10] and the de Sitter are [-10, -1e-2]. The anti-de Sitter space was created
+by rotating the de Sitter spacetime and placing a root event at the appropriate corner of the 
+causal diamond. 
+"""
+
+@save  "neighborhood_ball_volume_growth_15jan2022.bson" description minkowski_data desitter_data antidesitter_data
