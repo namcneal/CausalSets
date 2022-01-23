@@ -1,16 +1,17 @@
 using Graphs, SimpleWeightedGraphs
 using LongestPaths
+using DataStructures
+include("utils/GraphAlgs.jl")
+
 using CairoMakie
 using GraphPlot
 using LinearAlgebra
 using Random
-using GaussianProcesses
-using StatsBase
 using BSON: @save, @load
 import Plots
 
-using DataStructures
-include("utils/GraphAlgs.jl")
+using Turing
+using Statistics: mean, std
 
 Real = Union{Float64, Int64}
 ##
@@ -231,7 +232,7 @@ end
 
 tmin = 0.
 tmax = 10.
-num_events = 250
+num_events = 200
 sprinkling = make_sprinkling(tmin, tmax, num_events, minkowski_event)
 # sprinkling = sprinkling[[2,1], :]
 sprinkling[:, 1] = [0; 0]
@@ -244,4 +245,28 @@ causet = make_irreducible_causet(sprinkling)
 @time num_paths = [total_num_paths(causet, 1, i) for i in 1:num_events];
 
 ##
-plot(geodesic_distances,log10.(num_paths))
+
+y = log10.(num_paths .+ 1)
+y = reshape(y, length(y), 1)
+
+@model linreg(X, y; predictors=size(X, 2)) = begin
+    #priors
+    α ~ Normal(mean(y), 2.5 * std(y))
+    β ~ filldist(TDist(3), predictors)
+    σ ~ Exponential(1)
+
+    #likelihood
+    y ~ MvNormal(α .+ X .* β, σ)
+end;
+
+plot(geodesic_distances, log10.(num_paths));
+
+# model = linreg(geodesic_distances, y);
+# chain = sample(model, NUTS(), MCMCThreads(), 2_000, 4)
+slope     = summarystats(chain)[2,:][1]
+intercept = summarystats(chain)[1,:][1]
+xs = collect(1:26)
+ys = intercept .+ xs * slope
+plot(geodesic_distances, num_paths);
+lines!(xs, 10 .^ys, linewidth=5, color=:green)
+current_figure()
