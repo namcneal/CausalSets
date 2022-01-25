@@ -1,4 +1,5 @@
 using Graphs, SimpleWeightedGraphs
+using Graphs.LinAlg
 using LongestPaths
 using DataStructures
 include("utils/GraphAlgs.jl")
@@ -232,12 +233,36 @@ end
 
 tmin = 0.
 tmax = 10.
-num_events = 100
+num_events = 200
 sprinkling = make_sprinkling(tmin, tmax, num_events, minkowski_event)
 # sprinkling = sprinkling[[2,1], :]
 sprinkling[:, 1] = [0; 0]
 causet = make_irreducible_causet(sprinkling)
 
+##
+
+function num_paths_from_adjancency(causet::SimpleDiGraph, max_k::Float64=Inf)
+    adj_matrix  = adjacency_matrix(causet)
+    path_matrix = adj_matrix[:,:]
+
+    k = 1
+    power_k     = adj_matrix[:,:]
+    while norm(power_k) > 0.5 && k < max_k
+        power_k     *= adj_matrix
+        path_matrix += power_k
+        k+=1 
+    end
+
+    return path_matrix
+end
+@time test = num_paths_from_adjancency(causet)[1,:]
+
+##
+@time actual = [total_num_paths(causet, 1, i) for i = 1:num_events];
+
+##
+sum((test - actual).^2)
+##
 @time geodesic_distances = [find_longest_path(causet, 1, i; log_level=0).upper_bound 
                       for i in 1:num_events]; 
 geodesic_distances = convert.(Float64, geodesic_distances)
@@ -256,9 +281,8 @@ function compute_numberof_paths(causet::SimpleDiGraph, geodesic_distances::Vecto
     return num_paths
 end
 
-@time compute_numberof_paths(causet, geodesic_distances);
+# @show compute_numberof_paths(causet, geodesic_distances);
 
-@time [total_num_paths(causet, 1, i) for i = 1:num_events];
 
 ##
 # total_num_paths(causet, 45, 28)
