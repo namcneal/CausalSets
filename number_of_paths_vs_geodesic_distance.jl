@@ -232,7 +232,7 @@ end
 
 tmin = 0.
 tmax = 10.
-num_events = 200
+num_events = 100
 sprinkling = make_sprinkling(tmin, tmax, num_events, minkowski_event)
 # sprinkling = sprinkling[[2,1], :]
 sprinkling[:, 1] = [0; 0]
@@ -240,33 +240,55 @@ causet = make_irreducible_causet(sprinkling)
 
 @time geodesic_distances = [find_longest_path(causet, 1, i; log_level=0).upper_bound 
                       for i in 1:num_events]; 
+geodesic_distances = convert.(Float64, geodesic_distances)
 ##
 
-@time num_paths = [total_num_paths(causet, 1, i) for i in 1:num_events];
+function compute_numberof_paths(causet::SimpleDiGraph, geodesic_distances::Vector{Float64})
+    num_paths = 0 * geodesic_distances
+    num_paths[1] = 1
+
+    for event in sortperm(geodesic_distances)          
+        for ancestor in inneighbors(causet, event)
+            num_paths[event] += num_paths[ancestor] * total_num_paths(causet, ancestor, event)
+        end
+    end
+
+    return num_paths
+end
+
+@time compute_numberof_paths(causet, geodesic_distances);
+
+@time [total_num_paths(causet, 1, i) for i = 1:num_events];
 
 ##
+# total_num_paths(causet, 45, 28)
 
-y = log10.(num_paths .+ 1)
-y = reshape(y, length(y), 1)
+##
+# @time num_paths = [total_num_paths(causet, 1, i) for i in 1:num_events];
 
-@model linreg(X, y; predictors=size(X, 2)) = begin
-    #priors
-    α ~ Normal(mean(y), 2.5 * std(y))
-    β ~ filldist(TDist(3), predictors)
-    σ ~ Exponential(1)
+# ##
 
-    #likelihood
-    y ~ MvNormal(α .+ X .* β, σ)
-end;
+# y = log10.(num_paths .+ 1)
+# y = reshape(y, length(y), 1)
 
-plot(geodesic_distances, log10.(num_paths));
+# @model linreg(X, y; predictors=size(X, 2)) = begin
+#     #priors
+#     α ~ Normal(mean(y), 2.5 * std(y))
+#     β ~ filldist(TDist(3), predictors)
+#     σ ~ Exponential(1)
 
-# model = linreg(geodesic_distances, y);
-# chain = sample(model, NUTS(), MCMCThreads(), 2_000, 4)
-slope     = summarystats(chain)[2,:][1]
-intercept = summarystats(chain)[1,:][1]
-xs = collect(1:26)
-ys = intercept .+ xs * slope
-plot(geodesic_distances, num_paths);
-lines!(xs, 10 .^ys, linewidth=5, color=:green)
-current_figure()
+#     #likelihood
+#     y ~ MvNormal(α .+ X .* β, σ)
+# end;
+
+# plot(geodesic_distances, log10.(num_paths));
+
+# # model = linreg(geodesic_distances, y);
+# # chain = sample(model, NUTS(), MCMCThreads(), 2_000, 4)
+# slope     = summarystats(chain)[2,:][1]
+# intercept = summarystats(chain)[1,:][1]
+# xs = collect(1:26)
+# ys = intercept .+ xs * slope
+# plot(geodesic_distances, num_paths);
+# lines!(xs, 10 .^ys, linewidth=5, color=:green)
+# current_figure()
