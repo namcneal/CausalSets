@@ -285,6 +285,22 @@ function get_geodesic_distances(causet::SimpleDiGraph, root::Int64=1)
     return geodesic_distances
 end
 
+function get_geodesic_distances(adjacency_powers::Array{UInt128}, root::Int64=1)
+    num_events = size(adjacency_powers)[1]
+    num_layers = size(adjacency_powers)[3]
+    
+    geodesic_distances = zeros(Int64, num_events)
+    for event in 1:num_events
+        paths_to_root = adjacency_powers[root, event, :]
+        for i in num_layers:-1:1
+            if paths_to_root[i] > 0
+                geodesic_distances[event] = i
+                break
+            end
+        end
+    end
+
+    return geodesic_distances
 end
 
 ##
@@ -297,29 +313,16 @@ sprinkling = make_sprinkling(tmin, tmax, num_events, minkowski_event)
 sprinkling[:, 1] = [0; 0]
 causet = make_irreducible_causet(sprinkling)
 
-##
-
-
- 
-
-##
-function geodesic_distances_from_adjacency(causet::SimpleDiGraph, root::Int64=1)
-    
-
-@time geodesic_distances_from_adjacency(causet);
-
-@time geodesic_distances = [find_longest_path(causet, 1, i; log_level=0).upper_bound 
-                      for i in 1:num_events]; 
-# geodesic_distances = convert.(Float64, geodesic_distances)
-
-
-
-
+@time adjacency_powers   = get_adjacency_powers(causet)
+@time geodesic_distances = get_geodesic_distances(adjacency_powers)
+@time numberof_paths     = get_numberof_paths(adjacency_powers)
 
 ##
-# y = convert.(Float64, log10.(num_paths))
-# plot(geodesic_distances, y);
+y = convert.(Float64, log10.(numberof_paths .+ 1))
+plot(geodesic_distances, y);
+current_figure()
 
+##
 # y = log10.(num_paths .+ 1)
 # y = reshape(y, length(y), 1)
 
@@ -338,7 +341,9 @@ model = linreg(geodesic_distances, y);
 chain = sample(model, NUTS(), MCMCThreads(), 2_000, 4)
 slope     = summarystats(chain)[2,:][1]
 intercept = summarystats(chain)[1,:][1]
-xs = collect(1:26)
+
+## 
+xs = collect(1:maximum(geodesic_distances))
 ys = intercept .+ xs * slope
 plot(geodesic_distances, y);
 lines!(xs, ys, linewidth=5, color=:green)
