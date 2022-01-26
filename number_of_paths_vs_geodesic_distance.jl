@@ -231,18 +231,23 @@ end
 
 ##
 
-tmin = 0.
-tmax = 10.
-num_events = 200
-sprinkling = make_sprinkling(tmin, tmax, num_events, minkowski_event)
-# sprinkling = sprinkling[[2,1], :]
-sprinkling[:, 1] = [0; 0]
-causet = make_irreducible_causet(sprinkling)
+function get_adjacency_powers(causet::SimpleDiGraph, max_k::Float64=Inf)
+    adj_matrix  = convert.(UInt128, adjacency_matrix(causet))
+    power_k = adj_matrix[:,:]
+    all_powers = Matrix{UInt128}[]
 
-##
+    k = 1
+    push!(all_powers, power_k)
+    while norm(power_k) > 0.5 && k < max_k
+        power_k     *= adj_matrix
+        push!(all_powers, power_k)
+    end
 
-function num_paths_from_adjancency(causet::SimpleDiGraph, max_k::Float64=Inf)
-    adj_matrix  = adjacency_matrix(causet)
+    return cat(all_powers...; dims=3)
+end
+
+function get_numberof_paths(causet::SimpleDiGraph, max_k::Float64=Inf)
+    adj_matrix  = convert.(UInt128, adjacency_matrix(causet))
     path_matrix = adj_matrix[:,:]
 
     k = 1
@@ -255,64 +260,86 @@ function num_paths_from_adjancency(causet::SimpleDiGraph, max_k::Float64=Inf)
 
     return path_matrix
 end
-@time test = num_paths_from_adjancency(causet)[1,:]
 
-##
-@time actual = [total_num_paths(causet, 1, i) for i = 1:num_events];
+function get_numberof_paths(adjacency_powers::Array{UInt128}, max_k::Float64=Inf)
+    return sum(adjacency_powers; dims=3)[1,:,1]
+end
 
-##
-sum((test - actual).^2)
-##
-@time geodesic_distances = [find_longest_path(causet, 1, i; log_level=0).upper_bound 
-                      for i in 1:num_events]; 
-geodesic_distances = convert.(Float64, geodesic_distances)
-##
+function get_geodesic_distances(causet::SimpleDiGraph, root::Int64=1)
 
-function compute_numberof_paths(causet::SimpleDiGraph, geodesic_distances::Vector{Float64})
-    num_paths = 0 * geodesic_distances
-    num_paths[1] = 1
-
-    for event in sortperm(geodesic_distances)          
-        for ancestor in inneighbors(causet, event)
-            num_paths[event] += num_paths[ancestor] * total_num_paths(causet, ancestor, event)
+    num_events = nv(causet)
+    adjacency_powers = get_adjacency_powers(causet)
+    num_layers = size(adjacency_powers)[3]
+    
+    geodesic_distances = zeros(Int64, num_events)
+    for event in 1:num_events
+        paths_to_root = adjacency_powers[root, event, :]
+        for i in num_layers:-1:1
+            if paths_to_root[i] > 0
+                geodesic_distances[event] = i
+                break
+            end
         end
     end
 
-    return num_paths
+    return geodesic_distances
 end
 
-# @show compute_numberof_paths(causet, geodesic_distances);
+end
+
+##
+
+tmin = 0.
+tmax = 10.
+num_events = 500
+sprinkling = make_sprinkling(tmin, tmax, num_events, minkowski_event)
+# sprinkling = sprinkling[[2,1], :]
+sprinkling[:, 1] = [0; 0]
+causet = make_irreducible_causet(sprinkling)
+
+##
+
+
+ 
+
+##
+function geodesic_distances_from_adjacency(causet::SimpleDiGraph, root::Int64=1)
+    
+
+@time geodesic_distances_from_adjacency(causet);
+
+@time geodesic_distances = [find_longest_path(causet, 1, i; log_level=0).upper_bound 
+                      for i in 1:num_events]; 
+# geodesic_distances = convert.(Float64, geodesic_distances)
+
+
+
 
 
 ##
-# total_num_paths(causet, 45, 28)
-
-##
-# @time num_paths = [total_num_paths(causet, 1, i) for i in 1:num_events];
-
-# ##
+# y = convert.(Float64, log10.(num_paths))
+# plot(geodesic_distances, y);
 
 # y = log10.(num_paths .+ 1)
 # y = reshape(y, length(y), 1)
 
-# @model linreg(X, y; predictors=size(X, 2)) = begin
-#     #priors
-#     α ~ Normal(mean(y), 2.5 * std(y))
-#     β ~ filldist(TDist(3), predictors)
-#     σ ~ Exponential(1)
+@model linreg(X, y; predictors=size(X, 2)) = begin
+    #priors
+    α ~ Normal(mean(y), 2.5 * std(y))
+    β ~ filldist(TDist(3), predictors)
+    σ ~ Exponential(1)
 
-#     #likelihood
-#     y ~ MvNormal(α .+ X .* β, σ)
-# end;
+    #likelihood
+    y ~ MvNormal(α .+ X .* β, σ)
+end;
 
-# plot(geodesic_distances, log10.(num_paths));
 
-# # model = linreg(geodesic_distances, y);
-# # chain = sample(model, NUTS(), MCMCThreads(), 2_000, 4)
-# slope     = summarystats(chain)[2,:][1]
-# intercept = summarystats(chain)[1,:][1]
-# xs = collect(1:26)
-# ys = intercept .+ xs * slope
-# plot(geodesic_distances, num_paths);
-# lines!(xs, 10 .^ys, linewidth=5, color=:green)
-# current_figure()
+model = linreg(geodesic_distances, y);
+chain = sample(model, NUTS(), MCMCThreads(), 2_000, 4)
+slope     = summarystats(chain)[2,:][1]
+intercept = summarystats(chain)[1,:][1]
+xs = collect(1:26)
+ys = intercept .+ xs * slope
+plot(geodesic_distances, y);
+lines!(xs, ys, linewidth=5, color=:green)
+current_figure()
