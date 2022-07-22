@@ -4,11 +4,8 @@ using DelimitedFiles
 using LightGraphs
 using Statistics
 
-include("../lib/DiamondBounds.jl")
-include("../lib/metropolis.jl")
+import FiniteDiff
 include("../lib/normal_coordinate_utils.jl")
-include("../lib/causet_utils.jl")
-
 
 ##
 const num_spacial_dimensions = 1
@@ -16,274 +13,33 @@ dim = num_spacial_dimensions + 1
 
 riemann_at_center   = random_riemann(dim, 30.0)
 metric_perturbation(x) = normal_metric_perturbation(riemann_at_center, x) 
-metric(x, λ::Float64)  = flat_metric(dim) + λ * metric_perturbation(x)
+metric(x::Vector{Float64})  = flat_metric(dim) + metric_perturbation(x)
 
-##
-const min_time  = -1.0
-const max_time  =  1.0
-diamond = DiamondBounds(min_time, max_time, num_spacial_dimensions)
-diamond_characteristic(x) = is_in_diamond(diamond, x)
 
-function test_curvature_strength()
-    λs = collect(0:0.05:1.0)
-    num_event_draws = 60
+sidelength = 10.0
+ds = 1e-2
+ncube_uniform = [[x; y] for x in -sidelength:ds:sidelength, y in -sidelength:ds:sidelength] |> vec
+norms = norm.(ncube_uniform)
+ncube_uniform = ncube_uniform[sortperm(norms)]
 
-    num_MCMC_samples = 50000000
-    metropolic_width = 0.01
-    initial_coordinates = [0.0; 0.0]
+metric_singular_here = Float64[]
+for point in ncube_uniform 
+    g = det(metric(point))
 
-    num_events = 100000
-    @assert num_events <= num_MCMC_samples
-
-    f  = Figure(resolution = (800, 800), backgroundcolor = :white)
-    ax =  Axis(f[1, 1], backgroundcolor = :white)
-    xlims!(ax, [-1, 1])
-    ylims!(ax, [-1, 1])
-    
-    count = 1
-    for λ in λs
-        ax.title = "Perturbation of strength λ = $(λ)"
-        density(x) = sqrt(-det(metric(x, λ)))
-        MCMC = metropolis(diamond_characteristic, density, 
-                        num_MCMC_samples, metropolic_width,
-                        initial_coordinates; using_log_density=false)
-
-        for draw in 1:num_event_draws
-            
-            events = MCMC[:, sample(1:num_MCMC_samples, num_events)]
-
-            lower_bound_coordinates = [-1.0; 0.0]
-            events[:, 1]   = lower_bound_coordinates
-
-            scatter!(events[2,:], events[1,:], align=:center, color=:black, markersize=1.0) 
-            save("./sprinkling_varying_curvature_images/frame$(count).png", f)
-
-            count += 1
-            empty!(ax)
-        end
-    end 
-end
-
-test_curvature_strength()
-
-##
-
-function count_paths_from_lower_bound(causet::SimpleDiGraph)
-    adjacency = adjacency_matrix(causet)
-    current_adjacency_power = adjacency
-    counts                  = convert.(UInt128, adjacency)
-
-    while sum(current_adjacency_power) > 0
-        current_adjacency_power *= adjacency
-        counts .+= current_adjacency_power
+    # indicates the metric has switched signs
+    if g > 0
+        push!(metric_singular_here, 1.0)
+    else
+        push!(metric_singular_here, 0.0)
     end
-
-    return counts[1, 2:end]
 end
 
-function geodesic_distance_from_lower_bound(event_coordinates::Matrix{Float64})
-    num_events = size(event_coordinates)[2]
-
-    distances  = Float64[]
-    for i in 2:num_events
-        vector_from_lower_bound = event_coordinates[:, i] - event_coordinates[:, 1]
-        interval   = vector_from_lower_bound' * minkowski([0.0;0.0]) * vector_from_lower_bound
-
-        push!(distances, interval)
-    end
-
-    return sqrt.(-distances)
-end
-
-num_paths = count_paths_from_lower_bound(causet)
-data      = collect(log.(num_paths))
-distances = geodesic_distance_from_lower_bound(events)
-
+##
 f = Figure()
-
-ax = Axis(f[1, 1], xlabel="Geodesic Disance", ylabel="Log-Number of Paths")
-
-plot!(distances, data, color="black", markersize=3.0)
-
-f
-     
-
-##
-
-""" Model fitting 
-
-Assume the points have been drawn from a logistic function that
-depends on three parameters. 
-
-https://en.wikipedia.org/wiki/Bayesian_linear_regression
-
-"""
-
-function logistic(xs::Vector{Float64}, A::Float64, b::Float64, s::Float64, y0::Float64)
-    arg = -b * (xs .- s)
-
-    return y0 .+  A ./ (1 .+ exp.(arg))
-end
-
-function prob_data(data::Vector{Float64}, xs::Vector{Float64}, 
-                   A::Float64, b::Float64, s::Float64, y0::Float64, 
-                   σ::Float64)
-
-    #  Predictions from the model
-    predicted = logistic(xs, A, b, s, y0)
-    
-    # The difference b/w the model and the data
-    diff = data .- predicted
-
-    # Feed this difference into a normal distribution to add noise
-    arg  = diff' * diff
-    arg /= (2 * σ^2)
-    num_data_points = length(data)
-    coeff = 1 / (σ^2 * 2 * π)^(num_data_points / 2)
-    
-    return coeff * exp(-arg)
-end
-
-function log_prob_data(data::Vector{Float64}, xs::Vector{Float64}, 
-                       A::Float64, b::Float64, s::Float64, y0::Float64, 
-                       σ::Float64)
-    #  Predictions from the model
-    predicted = logistic(xs, A, b, s, y0)
-    
-    # The difference b/w the model and the data
-    diff = data .- predicted
-
-    # Feed this difference into a normal distribution to add noise
-    arg  = diff' * diff
-    variance = σ^2
-    arg /= (2 * variance )
-    num_data_points = length(data)
-    coeff = 1 / (variance  * 2 * π)^(num_data_points / 2)
-    
-    return log(coeff) - arg
-end
-
-function normal(x::Float64, μ::Float64, σ::Float64)
-    coeff = 1 / σ / sqrt(2*π)
-    arg = x .- μ
-    arg = (arg / σ).^2
-
-    return coeff * exp.(-arg ./ 2)
-end
-
-function prior_A(A::Float64)
-    return normal(A, 38.0, 2.0)
-end
-
-function prior_b(b::Float64)
-    return normal(b, 5.0, 4.0)
-end
-
-function prior_s(s::Float64)
-    return normal(s, 0.0, 1.0)
-end
-
-function prior_σ(σ::Float64)
-    return normal(σ, 0.0, 1.0)^2
-end
-
-function prior_y0(y0::Float64)
-    return normal(y0, 0.0, 4.0)
-end
-
-function log_posterior(A::Float64, b::Float64, s::Float64, y0::Float64, σ::Float64, 
-                       xs::Vector{Float64}, data::Vector{Float64})
-    log_post  = log_prob_data(data, xs, A, b, s, y0, σ)
-    
-    log_post += log(prior_A(A)) + log(prior_b(b)) + log(prior_s(s)) + log(prior_y0(y0))
-    log_post += log(prior_σ(σ))
-
-    return log_post
-end
-
-function log_posterior(point::Vector{Float64}, xs::Vector{Float64}, data::Vector{Float64})    
-    A, b, s, y0, σ = point
-
-    return log_posterior(A, b, s, y0, σ, xs, data)
-end
-
-num_MCMC_samples = 2000000
-metropolis_width = 0.01
-
-# Coordinates are of the form (A, b, s, y0, σ)
-initial_coordinates = [44.0, 3.0, 0.5, -10, 0.5]
-# initial_coordinates = all_samples[:, end]
-
-characteristic(x) =  true
-prob_density(point::Vector{Float64}) = log_posterior(point, distances, data)
-
-
-MCMC_param_samples = metropolis(characteristic, prob_density, 
-                                   num_MCMC_samples, metropolis_width,
-                                   initial_coordinates, log_density=true)
-##
-
-probs = [prob_density(MCMC_param_samples[:, i]) for i in 1:num_MCMC_samples]
-
-slopes = MCMC_param_samples[2,:]
-lines(slopes)
-
-##
-
-mode_params = MCMC_param_samples[:, argmax(probs)] 
-mean_params = mean(MCMC_param_samples, dims=2)
-
-A, b, s, y0, σ = mean_params
-xs = collect(0:0.01:2.0)
-ys = logistic(xs, A, b, s, y0)
-
-f = Figure()
-
-ax = Axis(f[1, 1], xlabel="Geodesic Disance", ylabel="Log-Number of Paths")
-
-plot!(distances, data, color="black", markersize=3.0)
-lines!(xs, ys, color="orange", linewidth=5)
-f
-
-##
-
-
-## 
-
-all_samples = MCMC_param_samples
-all_probs   = probs
-
-mode_params = all_samples[:, argmax(all_probs)] 
-
-print("Largest log-posterior: ", maximum(probs), "\n\n")
-display(mode_params)
-
-
-A, b, s, y0, σ = mean_params
-xs = collect(0:0.01:2.0)
-ys = logistic(xs, A, b, s, y0)
-
-f = Figure()
-
-ax = Axis(f[1, 1], xlabel="Geodesic Disance", ylabel="Log-Number of Paths")
-
-plot!(distances, data, color="black", markersize=4.0)
-lines!(xs, ys, color="red", linewidth=5)
-
+ax = Axis(f[1,1])
+ys = cumsum(metric_singular_here)
+lines!(norm.(ncube_uniform)[1:end-1], ys[2:end].- ys[1:end-1])
 f
 
 ## 
-function write_vector_to_file(vector::Vector{Float64}, filename::String)
-    io = open(filename, "w") do io
-        for x in vector
-          println(io, x)
-        end
-    end
-end
-
-write_vector_to_file(all_probs,   "probabilities.txt")
-writedlm("MCMC_param_samples.txt", all_samples, ',')
-
-
-
-
+guaranteed_boundary = 

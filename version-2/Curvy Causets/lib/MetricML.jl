@@ -39,8 +39,8 @@ function softplus(x)
     return @. log(1 + exp(x))
 end
 
-function leakysoftplus(x; α::Float64=1.0, β::Float64=1.0)
-    return @. α * x + (1 - α) * softplus(β*x)
+function leakysoftplus(x; α::Float64=1.0, β::Float64=1.0, γ::Float64=1.0)
+    return @. α * β*x + (1 - α) * softplus(γ*x)
 end
 
 function create_network(dimension::Int64, intermediate_layer_sizes::Vector{Int64}, activation::Function)
@@ -91,7 +91,7 @@ end
 
 function weight(network::Network, parameters::Vector, index::Int64)
     weight_vector = parameters[network.weights[index]]
-    return reshape(weight_vector, (shape...))
+    return reshape(weight_vector, size(network.weight_matrices[index]))
 end
 
 function bias(network::Network, parameters::Vector, index::Int64)
@@ -102,14 +102,13 @@ function update_parameter_matrices(network::Network)
     num_transformations = length(network.layer_sizes) - 1
     for i in 1:num_transformations
         @inbounds network.weight_matrices[i] = weight(network, network.parameters, i)
-        @inbounds network.biasmatrices[i]    =   bias(network, network.parameters, i)
+        @inbounds network.bias_matrices[i]   =   bias(network, network.parameters, i)
     end
 end
 
 function linear(network::Network, input::VectorInput, parameters::Vector, index::Int64)
     shape = network.layer_sizes[index:index+1]
     shape = reverse(shape) # Reversed due to how linear maps are defined
-
 
     # Use the shape of the weight matrix to get the parameters for the iteration
     weight_vector_length = shape[1] * shape[2]
@@ -192,9 +191,9 @@ function network2metric(network::Network, point::VectorInput)
 end
 
 function train(tetrad::Network, inputs::Vector, loss::Function, 
-               num_steps::Int64, η::Float64=1e-2, μ::Float64=0.1; grad_clip::Float64=Inf)
+               num_steps::Int64; η::Float64=1e-2, μ::Float64=0.1, grad_clip::Float64=Inf)
 
-    ℓ  = parameters -> loss(tetrad, inputs, parameters)
+    ℓ  = parameters -> loss(tetrad, parameters, inputs)
     
     losses = Float64[]
     best_network = deepcopy(tetrad)
@@ -203,9 +202,12 @@ function train(tetrad::Network, inputs::Vector, loss::Function,
     for e in 1:num_steps
         _loss = ℓ(tetrad.parameters)
         push!(losses, _loss)
+        print("loss for this batch $(e) was ", _loss, "\n")
 
-        if _loss > maximum(losses)
+
+        if _loss < minimum(losses)
             best_network = tetrad
+
         end
 
         # Look ahead for the gradient

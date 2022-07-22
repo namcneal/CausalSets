@@ -1,21 +1,39 @@
+using CairoMakie
 using Colors, ColorSchemes
 using Einsum
 using GeometryBasics
 using LinearAlgebra
-using Plots
 using StatsBase
 using VoronoiCells
 
 using BSON: @save
-include("lib/MetricML.jl")
-include("lib/metropolis.jl")
-include("geodesic_utils.jl");
+include("../lib/MetricML.jl")
+include("../lib/metropolis.jl")
+include("../geodesic_utils.jl");
 
 ##
+""" The activation function"""
+α=0.9
+β=0.1
+γ=0.8
+activation(x) = leakysoftplus(x; α=α, β=β, γ=γ) 
 
-α=0.1
-β=0.5
-activation(x) = leakysoftplus(x; α=α, β=α)
+f  = Figure()
+figure_layout = Dict(
+    :title => "Activation Function on ℝ",
+    :titlesize => 30,
+    :xlabel=>"Function Argument",
+    :xlabelsize=>25,
+    :ylabel=>"Activation  Value",
+    :ylabelsize=>25,
+)
+ax = Axis(f[1,1]; figure_layout...) 
+
+xs = -100:1e-2:100
+ys = activation.(xs)
+lines!(xs, ys, linewidth=5, color=:red)
+f
+##
 
 dim = 2
 network    = create_network(dim, [25,25],  activation)
@@ -37,7 +55,9 @@ num_MCMC_samples = 1e7
 num_MCMC_samples = convert(Int64, num_MCMC_samples)
 MCMC_width = 5e-1
 
-MCMC = metropolis(characteristic, density, num_MCMC_samples, MCMC_step, zeros(2))
+MCMC = metropolis(characteristic, density, 
+                 num_MCMC_samples, MCMC_width, 
+                 zeros(2))
 
 ##
 num_events = 10000

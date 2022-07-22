@@ -1,21 +1,23 @@
+using CairoMakie
 using Colors, ColorSchemes
 using Einsum
 using GeometryBasics
 using LinearAlgebra
-using Plots
 using StatsBase
 using VoronoiCells
 
 using BSON: @save
-include("lib/MetricML.jl")
-include("lib/metropolis.jl")
-include("geodesic_utils.jl");
+include("../lib/MetricML.jl")
+include("../lib/metropolis.jl")
+include("../geodesic_utils.jl");
 
 ##
-
-α=0.1
-β=0.5
-activation(x) = leakysoftplus(x; α=α, β=α)
+""" The activation function"""
+α=0.9
+β=0.1
+γ=0.8
+activation(x) = leakysoftplus(x; α=α, β=β, γ=γ) 
+##
 
 dim = 2
 network    = create_network(dim, [25,25],  activation)
@@ -37,7 +39,9 @@ num_MCMC_samples = 1e7
 num_MCMC_samples = convert(Int64, num_MCMC_samples)
 MCMC_width = 5e-1
 
-MCMC = metropolis(characteristic, density, num_MCMC_samples, MCMC_step, zeros(2))
+MCMC = metropolis(characteristic, density, 
+                  num_MCMC_samples, MCMC_width, 
+                  zeros(2))
 
 ##
 num_events = 10000
@@ -47,14 +51,22 @@ events[:, 1] *= 0
 
 xs = events[1,:]
 ys = events[2,:]
-scatter(xs, ys, markersize=2)
-
+f  = Figure()
+ax = Axis(f[1,1], aspect=1)
+ 
 source_index = 1
 source = events[:, source_index]
-ϵ = 30
-plot!(xlims=source[1].+[-ϵ,ϵ], ylims=source[2].+[-ϵ,ϵ], aspect_ratio=1)
+ϵ = 31
+xlims!(ax, source[1].+[-ϵ,ϵ])
+ylims!(ax, source[2].+[-ϵ,ϵ])
+scatter!(xs, ys, markersize=2)
+f
 
 ##
+function shoot_geodesics_epsilon_ball(source::Vector{Float64}, )
+end
+
+
 radius = ϵ
 neighbor_indices = mapslices(norm, events .- source; dims=1) .< radius
 neighbors        = events[:, vec(neighbor_indices)]
