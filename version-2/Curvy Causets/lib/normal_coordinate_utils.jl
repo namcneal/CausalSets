@@ -4,7 +4,31 @@ using Flux
 using LinearAlgebra
 
 ##
+function first_indexpair_asymmetric(riemann::Riemann, x::Vector{Float64})
+    dim = riemann.dim
 
+    should_be_zero = 0.0
+
+    for a in 1:dim, b in 1:dim, c in 1:dim, d in 1:dim
+        @inbounds should_be_zero += (riemann[a,b,c,d](x) + riemann[b,a,c,d](x))[1]^2
+    end
+
+    return should_be_zero
+end
+
+function last_indexpair_asymmetric(riemann::Riemann, x::Vector{Float64})
+    dim = riemann.dim
+
+    should_be_zero = 0.0
+
+    # For any choice of indices in the first two coordinates, the resulting d x d tensor
+    # should be antisymmetric
+    for a in 1:dim, b in 1:dim, c in 1:dim, d in 1:dim
+        @inbounds should_be_zero += (riemann[a,b,c,d](x) .+ riemann[a,b,d,c](x))[1]^2
+    end
+
+    return should_be_zero  
+end
 
 function check_algebraic_bianchi(riemann::Array)
     dim = size(riemann)[1]
